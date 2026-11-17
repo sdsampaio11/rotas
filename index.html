@@ -65,6 +65,7 @@ body.nm .leaflet-control-zoom{display:none}
   <div id="nav"><div class="big" id="nIc"></div><div class="t"><div class="dist" id="nDist"></div><div class="txt" id="nTxt"></div><div class="sub" id="nSub"></div></div></div>
   <div id="navbar">
     <button class="b" id="bDone">Entregue ✓ próxima parada</button>
+    <button id="bCenter">◎ Centralizar</button>
     <button id="bSim">Simular</button>
     <button id="bMute">🔊 Voz</button>
     <button id="bExit">Sair</button>
@@ -112,7 +113,7 @@ let pinMk=[],routeLine=null,legLine=null,stepMk=null,meMk=null;
 
 /* ---- estado ---- */
 let groups=[],opt=[],legs=[],est=false,done=new Set(),curStop=1;
-let simT=null,wl=null,hd=0,nav=false,watchId=null,stepIdx=0,offCount=0,voice=true,lastSpoken="",lastPos=null,rerouting=false;
+let firstFix=false,freeUntil=0,simT=null,wl=null,hd=0,nav=false,watchId=null,stepIdx=0,offCount=0,voice=true,lastSpoken="",lastPos=null,rerouting=false;
 
 $('f').onchange=async e=>{
   const wb=XLSX.read(await e.target.files[0].arrayBuffer());
@@ -201,8 +202,7 @@ function startNav(){
   if(!navigator.geolocation){alert('Este navegador não tem GPS.');return}
   nav=true;document.body.classList.add('nm');setTimeout(()=>map.invalidateSize(),50);lockScreen();
   while(curStop<opt.length&&done.has(curStop))curStop++;
-  stepIdx=0;offCount=0;
-  $('nav').style.display='flex';$('navbar').style.display='flex';
+  stepIdx=0;offCount=0;freeUntil=0;firstFix=true;$('nav').style.display='flex';$('navbar').style.display='flex';
   meMk=L.marker([0,0],{icon:L.divIcon({className:'',html:'<svg class="arrow" viewBox="0 0 44 44"><circle cx="22" cy="22" r="20" fill="#1a73e8" opacity=".25"/><path d="M22 5 L35 36 L22 29 L9 36 Z" fill="#1a73e8" stroke="#fff" stroke-width="3" stroke-linejoin="round"/></svg>',iconSize:[44,44],iconAnchor:[22,22]}),zIndexOffset:1000});
   watchId=navigator.geolocation.watchPosition(onPos,err=>{$('nSub').textContent='GPS: '+err.message},{enableHighAccuracy:true,maximumAge:1000,timeout:20000});
   enterLeg();
@@ -215,6 +215,9 @@ function exitNav(){
 }
 $('bExit').onclick=()=>{exitNav();if(opt.length)drawAll()};
 $('bMute').onclick=()=>{voice=!voice;$('bMute').textContent=voice?'🔊 Voz':'🔇 Mudo';if(!voice&&window.speechSynthesis)speechSynthesis.cancel()};
+// o usuário mexeu no mapa: pausa o auto-seguir por 10 s ou até tocar em Centralizar
+['touchstart','mousedown','wheel'].forEach(ev=>$('map').addEventListener(ev,()=>{if(nav)freeUntil=Date.now()+10000},{passive:true}));
+$('bCenter').onclick=()=>{freeUntil=0;if(lastPos)map.setView([lastPos.lat,lastPos.lng],Math.max(map.getZoom(),18),{animate:true})};
 $('bSim').onclick=()=>{
   if(simT){clearInterval(simT);simT=null;return}
   const l=legs[curStop-1];if(!l)return;
@@ -259,7 +262,8 @@ function onPos(e,silent){
   if(nh!=null){const d=((nh-hd+540)%360)-180;setRot((hd+d*0.5+360)%360)}
   if(!lastPos||hav(lastPos,pos)>3||silent)lastPos=pos;
   meMk.setLatLng([pos.lat,pos.lng]);if(!map.hasLayer(meMk))meMk.addTo(map);
-  if(!silent)map.setView([pos.lat,pos.lng],Math.max(map.getZoom(),18),{animate:true});
+  if(!silent&&firstFix){firstFix=false;map.setView([pos.lat,pos.lng],18)}
+  else if(!silent&&Date.now()>freeUntil)map.panTo([pos.lat,pos.lng],{animate:true});
   const l=legs[curStop-1];if(!l)return;
   const g=groups[opt[curStop]];
   if(hav(pos,g)<35){ // chegou
