@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Roteirizador GPS</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root{--bg:#fff;--fg:#1a1a1a;--mut:#666;--card:#f4f4f2;--bd:#ddd;--ac:#ee4d2d;--blue:#1a73e8;--ok:#0a7}
+@media (prefers-color-scheme:dark){:root{--bg:#161616;--fg:#eee;--mut:#9a9a9a;--card:#222;--bd:#383838;color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font:15px/1.35 system-ui,Segoe UI,Roboto,sans-serif;display:flex;flex-direction:column}
+header{padding:8px 12px;border-bottom:1px solid var(--bd);display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+header h1{font-size:17px;margin:0 8px 0 0}
+button,select,input[type=file]{font:inherit;padding:7px 11px;border-radius:8px;border:1px solid var(--bd);background:var(--bg);color:var(--fg)}
+button{cursor:pointer}button.p{background:var(--ac);color:#fff;border-color:var(--ac)}button.b{background:var(--blue);color:#fff;border-color:var(--blue)}button:disabled{opacity:.5}
+#main{flex:1;display:flex;min-height:0;position:relative}
+#side{width:380px;max-width:42%;overflow:auto;border-right:1px solid var(--bd);background:var(--bg)}
+#mw{flex:1;min-height:0;position:relative;overflow:hidden}#map{position:absolute;inset:0;transform-origin:50% 50%}
+body.nm header,body.nm #side{display:none}
+body.nm #map{inset:-45%}
+body.nm .pin,body.nm .mv{transform:rotate(var(--cr))}body.nm .pin.c{transform:rotate(var(--cr)) scale(1.25)}
+body.nm .leaflet-control-zoom{display:none}
+.arrow{width:44px;height:44px;filter:drop-shadow(0 2px 4px #0009)}
+#kpi{display:flex;gap:6px;padding:10px 12px;background:var(--card);border-bottom:1px solid var(--bd)}
+#kpi div{flex:1}#kpi b{display:block;font-size:17px}#kpi span{color:var(--mut);font-size:11px}
+.stop{border-bottom:1px solid var(--bd)}
+.sh{display:flex;gap:10px;padding:10px 12px;cursor:pointer;align-items:flex-start}
+.sh.cur{background:rgba(26,115,232,.12)}.sh.done{opacity:.45}
+.n{flex:none;width:28px;height:28px;border-radius:50%;background:var(--ac);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px}
+.done .n{background:var(--ok)}
+.sh small{display:block;color:var(--mut)}
+.steps{display:none;padding:0 0 6px}.stop.open .steps{display:block}
+.st{display:flex;gap:10px;padding:8px 12px 8px 20px;cursor:pointer;align-items:center;border-top:1px dashed var(--bd)}
+.st:hover{background:var(--card)}
+.ic{flex:none;width:30px;text-align:center;font-size:22px;color:var(--blue)}
+.st .d{color:var(--mut);font-size:12px}
+.tag{background:var(--bd);border-radius:6px;padding:0 6px;font-size:12px;margin-left:4px}
+.warn{color:#c60;padding:10px 12px}
+#nav{display:none;position:absolute;z-index:1000;top:0;left:0;right:0;background:#0b5a33;color:#fff;padding:10px 14px;gap:14px;align-items:center;box-shadow:0 2px 8px #0006}
+#nav .big{font-size:44px;line-height:1;width:56px;text-align:center}
+#nav .t{flex:1;min-width:0}#nav .dist{font-size:26px;font-weight:700}#nav .txt{font-size:18px}
+#nav .sub{font-size:12px;opacity:.85}
+#navbar{display:none;position:absolute;z-index:1000;bottom:14px;left:50%;transform:translateX(-50%);gap:8px;flex-wrap:wrap;justify-content:center;width:95%}
+#navbar button{box-shadow:0 2px 6px #0006}
+.me{width:22px;height:22px;border-radius:50%;background:var(--blue);border:3px solid #fff;box-shadow:0 0 0 2px var(--blue),0 0 10px #0008}
+.pin{width:28px;height:28px;border-radius:50%;background:var(--ac);color:#fff;border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;box-shadow:0 1px 4px #0006}
+.pin.s{background:var(--ok)}.pin.d{background:#888}.pin.c{background:var(--blue);transform:scale(1.25)}
+.mv{background:var(--blue);color:#fff;width:34px;height:34px;border-radius:50%;border:3px solid #fff;display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 1px 6px #0008}
+@media(max-width:760px){#main{flex-direction:column-reverse}#side{width:100%;max-width:none;height:38%;border-right:0;border-top:1px solid var(--bd)}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Roteirizador GPS</h1>
+  <input type="file" id="f" accept=".xlsx,.xls,.csv">
+  <label>Partida: <select id="st"></select></label>
+  <button class="p" id="go" disabled>Roteirizar</button>
+  <button id="sat">Satélite</button>
+</header>
+<div id="main">
+  <div id="side"><div class="warn" style="color:var(--mut)">Escolha o arquivo .xlsx da Shopee, a partida e clique em Roteirizar.</div></div>
+  <div id="mw"><div id="map"></div></div>
+  <div id="nav"><div class="big" id="nIc"></div><div class="t"><div class="dist" id="nDist"></div><div class="txt" id="nTxt"></div><div class="sub" id="nSub"></div></div></div>
+  <div id="navbar">
+    <button class="b" id="bDone">Entregue ✓ próxima parada</button>
+    <button id="bSim">Simular</button>
+    <button id="bMute">🔊 Voz</button>
+    <button id="bExit">Sair</button>
+  </div>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+const OSRM="https://router.project-osrm.org";
+const $=id=>document.getElementById(id);
+const R=6371000,rad=x=>x*Math.PI/180;
+const hav=(a,b)=>{const dl=rad(b.lat-a.lat),dn=rad(b.lng-a.lng);const h=Math.sin(dl/2)**2+Math.cos(rad(a.lat))*Math.cos(rad(b.lat))*Math.sin(dn/2)**2;return 2*R*Math.asin(Math.sqrt(h))};
+const cost=(o,M)=>o.slice(1).reduce((s,v,i)=>s+M[o[i]][v],0);
+function nn(D,s){const u=new Set(D.keys());u.delete(s);const o=[s];while(u.size){const c=o[o.length-1];let b=-1,bd=1e18;for(const j of u)if(D[c][j]<bd){bd=D[c][j];b=j}o.push(b);u.delete(b)}return o}
+function twoOpt(o,D){let imp=true;const n=o.length;while(imp){imp=false;for(let i=1;i<n-1;i++)for(let j=i+1;j<n;j++){const a=o[i-1],b=o[i],c=o[j],d=j<n-1?o[j+1]:null;const dl=D[a][c]+(d!==null?D[b][d]:0)-D[a][b]-(d!==null?D[c][d]:0);if(dl<-1e-6){o=o.slice(0,i).concat(o.slice(i,j+1).reverse(),o.slice(j+1));imp=true}}}return o}
+const km=v=>(v/1000).toFixed(2).replace('.',',')+' km',min=v=>Math.round(v/60)+' min';
+const fmtD=m=>m>=1000?(m/1000).toFixed(1).replace('.',',')+' km':Math.max(10,Math.round(m/10)*10)+' m';
+
+/* ---- instruções (estilo Google Maps) ---- */
+const SIDE={left:"à esquerda",right:"à direita","slight left":"levemente à esquerda","slight right":"levemente à direita","sharp left":"fechando à esquerda","sharp right":"fechando à direita"};
+function icon(s){const m=s.maneuver,t=m.type,d=m.modifier;
+  if(t==="arrive")return"📍";if(t==="depart")return"⬆";if(d==="uturn")return"↩";
+  if(["roundabout","rotary","roundabout turn"].includes(t))return"⟳";
+  return({left:"⬅","slight left":"↖","sharp left":"↙",right:"➡","slight right":"↗","sharp right":"↘",straight:"⬆"})[d]||"⬆"}
+function instr(s,destAddr){const m=s.maneuver,t=m.type,d=m.modifier,nm=s.name||"";
+  const on=nm?` na ${nm}`:"",to=nm?` para ${nm}`:"";
+  if(t==="depart")return nm?`Siga pela ${nm}`:"Inicie o trajeto";
+  if(t==="arrive")return`Chegou: ${destAddr||"destino"}`+(d==="left"?" (à esquerda)":d==="right"?" (à direita)":"");
+  if(d==="uturn")return`Faça o retorno${on}`;
+  if(["roundabout","rotary","roundabout turn"].includes(t))return m.exit?`Na rotatória, pegue a ${m.exit}ª saída${to}`:`Entre na rotatória${to}`;
+  if(t==="fork")return`Mantenha-se ${SIDE[d]||"em frente"}${on}`;
+  if(t==="merge")return`Entre${on}`;
+  if(d==="straight"||!d)return nm?`Continue pela ${nm}`:"Siga em frente";
+  if(t==="new name"||t==="continue")return`Continue ${SIDE[d]||""}${on}`;
+  return`Vire ${SIDE[d]}${to}`}
+
+/* ---- mapa ---- */
+const map=L.map('map',{zoomControl:true}).setView([-19.93,-44.06],13);
+const osm=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Esri, HERE, OpenStreetMap'});
+const sat=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Esri'});
+osm.addTo(map);let isSat=false;
+$('sat').onclick=()=>{isSat=!isSat;isSat?(map.removeLayer(osm),sat.addTo(map)):(map.removeLayer(sat),osm.addTo(map));$('sat').textContent=isSat?'Mapa':'Satélite'};
+const lay=L.layerGroup().addTo(map);
+let pinMk=[],routeLine=null,legLine=null,stepMk=null,meMk=null;
+
+/* ---- estado ---- */
+let groups=[],opt=[],legs=[],est=false,done=new Set(),curStop=1;
+let simT=null,wl=null,hd=0,nav=false,watchId=null,stepIdx=0,offCount=0,voice=true,lastSpoken="",lastPos=null,rerouting=false;
+
+$('f').onchange=async e=>{
+  const wb=XLSX.read(await e.target.files[0].arrayBuffer());
+  const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});const m=new Map();
+  rows.forEach(r=>{const lat=parseFloat(String(r['Latitude']).replace(',','.')),lng=parseFloat(String(r['Longitude']).replace(',','.'));if(isNaN(lat)||isNaN(lng))return;
+    const k=lat.toFixed(5)+','+lng.toFixed(5);if(!m.has(k))m.set(k,{lat,lng,addr:r['Destination Address'],bairro:r['Bairro'],tns:[]});m.get(k).tns.push(r['SPX TN'])});
+  groups=[...m.values()];
+  $('st').innerHTML='<option value="gps">📍 Minha localização (GPS)</option>'+groups.map((g,i)=>`<option value="${i}">${i+1}. ${String(g.addr).slice(0,38)}</option>`).join('');
+  $('go').disabled=!groups.length;
+  $('side').innerHTML=`<div class="warn" style="color:var(--fg)">${rows.length} pacotes em ${groups.length} paradas.${groups.length>100?'<br><span style="color:#c60">Mais de 100 paradas: o servidor gratuito só aceita 100 por vez.</span>':''}</div>`;
+};
+
+function getPos(){return new Promise((res,rej)=>navigator.geolocation?navigator.geolocation.getCurrentPosition(p=>res({lat:p.coords.latitude,lng:p.coords.longitude}),rej,{enableHighAccuracy:true,timeout:10000}):rej())}
+
+$('go').onclick=async()=>{
+  $('go').disabled=true;exitNav();
+  $('side').innerHTML='<div class="warn">Consultando as ruas reais...</div>';
+  let pts=groups.slice(),s;
+  if($('st').value==="gps"){
+    try{const p=await getPos();pts=[{lat:p.lat,lng:p.lng,addr:'Minha localização',bairro:'',tns:[]},...groups];s=0}
+    catch(e){alert('Não consegui o GPS; usando a 1ª parada como partida.');s=0}
+  }else s=+$('st').value;
+  const n=pts.length,loc=pts.map(g=>g.lng+','+g.lat).join(';');
+  let dur,dist;est=false;
+  try{const j=await(await fetch(`${OSRM}/table/v1/driving/${loc}?annotations=duration,distance`)).json();if(j.code!=="Ok")throw 0;dur=j.durations;dist=j.distances}
+  catch(e){est=true;dist=pts.map(a=>pts.map(b=>hav(a,b)*1.35));dur=dist.map(r=>r.map(d=>d/8.3))}
+  const S=dur.map((r,i)=>r.map((v,j)=>((v??0)+(dur[j][i]??0))/2));
+  const orig=[s,...[...Array(n).keys()].filter(i=>i!==s)];
+  const o=twoOpt(nn(S,s),S);
+  groups=pts;opt=o;legs=[];done=new Set();curStop=1;
+  let geo=null;
+  if(!est){try{const j=await(await fetch(`${OSRM}/route/v1/driving/${o.map(i=>pts[i].lng+','+pts[i].lat).join(';')}?steps=true&overview=full&geometries=geojson`)).json();if(j.code==="Ok"){legs=j.routes[0].legs;geo=j.routes[0].geometry.coordinates}}catch(e){}}
+  window._geo=geo;window._kpi={n:n,lo:cost(orig,dist),ln:cost(opt,dist),td:cost(opt,dur)};
+  drawAll();$('go').disabled=false;
+};
+
+/* ---- desenho ---- */
+function pinHtml(q){const cls=q===0?'s':done.has(q)?'d':(nav&&q===curStop)?'c':'';return L.divIcon({className:'',html:`<div class="pin ${cls}">${q+1}</div>`,iconSize:[28,28],iconAnchor:[14,14]})}
+function drawAll(){
+  lay.clearLayers();pinMk=[];
+  const geo=window._geo,pts=geo?geo.map(c=>[c[1],c[0]]):opt.map(i=>[groups[i].lat,groups[i].lng]);
+  routeLine=L.polyline(pts,{color:'#1a73e8',weight:6,opacity:.85}).addTo(lay);
+  opt.forEach((gi,q)=>{const g=groups[gi];const mk=L.marker([g.lat,g.lng],{icon:pinHtml(q),zIndexOffset:q===curStop?500:0}).addTo(lay).bindTooltip(g.addr);mk.on('click',()=>{openStop(q)});pinMk.push(mk)});
+  map.fitBounds(routeLine.getBounds(),{padding:[30,30]});
+  renderSide();
+}
+function refreshPins(){pinMk.forEach((m,q)=>m.setIcon(pinHtml(q)))}
+function renderSide(){
+  const k=window._kpi;
+  let h=(est?'<div class="warn">Sem acesso ao servidor de mapas: valores estimados, sem curvas.</div>':'')+
+  `<div id="kpi"><div><b>${k.n}</b><span>paradas</span></div><div><b>${km(k.lo)}</b><span>original</span></div><div><b>${km(k.ln)}</b><span>otimizada</span></div><div><b>${min(k.td)}</b><span>direção</span></div></div>
+  <div style="padding:10px 12px"><button class="b" id="start" style="width:100%;font-size:16px">▶ Iniciar navegação GPS</button></div>`;
+  h+=opt.map((gi,q)=>{const g=groups[gi],l=legs[q-1];
+    const steps=l?l.steps.map((t,si)=>`<div class="st" data-q="${q}" data-s="${si}"><div class="ic">${icon(t)}</div><div><div>${instr(t,g.addr)}</div><div class="d">${fmtD(t.distance)}</div></div></div>`).join(''):'';
+    return `<div class="stop${done.has(q)?' done':''}" id="s${q}"><div class="sh${nav&&q===curStop?' cur':''}${done.has(q)?' done':''}" data-q="${q}"><div class="n">${done.has(q)?'✓':q+1}</div><div style="flex:1"><b>${g.addr}</b>${g.tns.length>1?`<span class="tag">${g.tns.length} pacotes</span>`:''}<small>${g.bairro||''} ${g.tns.join(', ')}</small>${q&&l?`<small>Trecho: ${km(l.distance)} · ${min(l.duration)}</small>`:''}</div></div><div class="steps">${steps}</div></div>`}).join('');
+  $('side').innerHTML=h;
+  $('start').onclick=startNav;
+  document.querySelectorAll('.sh').forEach(e=>e.onclick=()=>openStop(+e.dataset.q));
+  document.querySelectorAll('.st').forEach(e=>e.onclick=()=>showStep(+e.dataset.q,+e.dataset.s));
+}
+function openStop(q){
+  document.querySelectorAll('.stop.open').forEach(e=>e.classList.remove('open'));
+  const el=$('s'+q);el.classList.add('open');el.scrollIntoView({block:'nearest'});
+  const g=groups[opt[q]];
+  if(q>0&&legs[q-1]){showLeg(q)}else map.setView([g.lat,g.lng],17);
+}
+function showLeg(q){
+  if(legLine)map.removeLayer(legLine);
+  const l=legs[q-1],c=[];l.steps.forEach(s=>s.geometry&&s.geometry.coordinates?c.push(...s.geometry.coordinates):0);
+  if(!c.length)return;
+  legLine=L.polyline(c.map(x=>[x[1],x[0]]),  {color:nav?'#1a73e8':'#ff6d00',weight:nav?10:8,opacity:.95}).addTo(map);
+    if(!nav)map.fitBounds(legLine.getBounds(),{padding:[40,40]});
+}
+function showStep(q,si){
+  showLeg(q);
+  const t=legs[q-1].steps[si],[lng,lat]=t.maneuver.location;
+  if(stepMk)map.removeLayer(stepMk);
+  stepMk=L.marker([lat,lng],{icon:L.divIcon({className:'',html:`<div class="mv">${icon(t)}</div>`,iconSize:[34,34],iconAnchor:[17,17]})}).addTo(map).bindPopup(instr(t,groups[opt[q]].addr)).openPopup();
+  map.setView([lat,lng],18);
+}
+
+/* ---- navegação GPS ---- */
+function speak(t){if(!voice||!window.speechSynthesis||t===lastSpoken)return;lastSpoken=t;speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);u.lang='pt-BR';speechSynthesis.speak(u)}
+function startNav(){
+  if(est||!legs.length){alert('Navegação precisa dos dados de ruas (servidor de mapas).');return}
+  if(!navigator.geolocation){alert('Este navegador não tem GPS.');return}
+  nav=true;document.body.classList.add('nm');setTimeout(()=>map.invalidateSize(),50);lockScreen();
+  while(curStop<opt.length&&done.has(curStop))curStop++;
+  stepIdx=0;offCount=0;
+  $('nav').style.display='flex';$('navbar').style.display='flex';
+  meMk=L.marker([0,0],{icon:L.divIcon({className:'',html:'<svg class="arrow" viewBox="0 0 44 44"><circle cx="22" cy="22" r="20" fill="#1a73e8" opacity=".25"/><path d="M22 5 L35 36 L22 29 L9 36 Z" fill="#1a73e8" stroke="#fff" stroke-width="3" stroke-linejoin="round"/></svg>',iconSize:[44,44],iconAnchor:[22,22]}),zIndexOffset:1000});
+  watchId=navigator.geolocation.watchPosition(onPos,err=>{$('nSub').textContent='GPS: '+err.message},{enableHighAccuracy:true,maximumAge:1000,timeout:20000});
+  enterLeg();
+}
+function exitNav(){
+  nav=false;document.body.classList.remove('nm');setRot(0);setTimeout(()=>map.invalidateSize(),50);if(simT){clearInterval(simT);simT=null}if(wl){wl.release();wl=null}if(watchId!=null)navigator.geolocation.clearWatch(watchId);watchId=null;
+  $('nav').style.display='none';$('navbar').style.display='none';
+  if(meMk){map.removeLayer(meMk);meMk=null}
+  if(window.speechSynthesis)speechSynthesis.cancel();
+}
+$('bExit').onclick=()=>{exitNav();if(opt.length)drawAll()};
+$('bMute').onclick=()=>{voice=!voice;$('bMute').textContent=voice?'🔊 Voz':'🔇 Mudo';if(!voice&&window.speechSynthesis)speechSynthesis.cancel()};
+$('bSim').onclick=()=>{
+  if(simT){clearInterval(simT);simT=null;return}
+  const l=legs[curStop-1];if(!l)return;
+  const c=[];l.steps.forEach(s=>s.geometry&&c.push(...s.geometry.coordinates));
+  let i=0;simT=setInterval(()=>{if(i>=c.length){clearInterval(simT);simT=null;return}
+    const p=c[i],q=c[Math.min(i+1,c.length-1)];i+=2;
+    onPos({coords:{latitude:p[1],longitude:p[0],heading:bearing({lat:p[1],lng:p[0]},{lat:q[1],lng:q[0]}),speed:8}})},700)};
+$('bDone').onclick=()=>{done.add(curStop);advanceStop()};
+function advanceStop(){
+  while(curStop<opt.length&&done.has(curStop))curStop++;
+  if(curStop>=opt.length){exitNav();refreshPins();renderSide();alert('Rota concluída! 🎉');return}
+  stepIdx=0;enterLeg();
+}
+function enterLeg(){
+  refreshPins();renderSide();
+  const el=$('s'+curStop);if(el){el.scrollIntoView({block:'nearest'})}
+  if(legLine)map.removeLayer(legLine);if(stepMk){map.removeLayer(stepMk);stepMk=null}
+  showLeg(curStop);
+  updateBanner();
+  if(lastPos)onPos({coords:{latitude:lastPos.lat,longitude:lastPos.lng,heading:lastPos.h}},true);
+}
+function updateBanner(pos){
+  const l=legs[curStop-1];if(!l)return;
+  const nx=l.steps[Math.min(stepIdx+1,l.steps.length-1)];
+  const [lng,lat]=nx.maneuver.location;
+  const d=pos?hav(pos,{lat,lng}):l.steps[stepIdx].distance;
+  const g=groups[opt[curStop]];
+  $('nIc').textContent=icon(nx);$('nDist').textContent=fmtD(d);
+  const txt=instr(nx,g.addr);$('nTxt').textContent=txt;
+  $('nSub').textContent=`Parada ${curStop} de ${opt.length-1}: ${g.addr}`;
+  if(d<150||stepIdx===0&&!pos)speak(`${d<=60?'Agora':'Em '+fmtD(d)}, ${txt}`);
+}
+function distToLine(p,coords){let best=1e9;for(const c of coords){const d=hav(p,{lat:c[1],lng:c[0]});if(d<best)best=d}return best}
+async function lockScreen(){try{wl=await navigator.wakeLock.request('screen')}catch(e){}}
+function setRot(h){hd=h;$('map').style.transform=document.body.classList.contains('nm')?`rotate(${-h}deg)`:'';document.documentElement.style.setProperty('--cr',h+'deg')}
+const bearing=(a,b)=>{const y=Math.sin(rad(b.lng-a.lng))*Math.cos(rad(b.lat)),x=Math.cos(rad(a.lat))*Math.sin(rad(b.lat))-Math.sin(rad(a.lat))*Math.cos(rad(b.lat))*Math.cos(rad(b.lng-a.lng));return(Math.atan2(y,x)*180/Math.PI+360)%360};
+function onPos(e,silent){
+  const c=e.coords,pos={lat:c.latitude,lng:c.longitude,h:c.heading};
+  let nh=null;
+  if(c.heading!=null&&!isNaN(c.heading)&&(c.speed==null||c.speed>1))nh=c.heading;
+  else if(lastPos&&hav(lastPos,pos)>6)nh=bearing(lastPos,pos);
+  if(nh!=null){const d=((nh-hd+540)%360)-180;setRot((hd+d*0.5+360)%360)}
+  if(!lastPos||hav(lastPos,pos)>3||silent)lastPos=pos;
+  meMk.setLatLng([pos.lat,pos.lng]);if(!map.hasLayer(meMk))meMk.addTo(map);
+  if(!silent)map.setView([pos.lat,pos.lng],Math.max(map.getZoom(),18),{animate:true});
+  const l=legs[curStop-1];if(!l)return;
+  const g=groups[opt[curStop]];
+  if(hav(pos,g)<35){ // chegou
+    speak(`Você chegou: ${g.addr}`);$('nTxt').textContent='Chegou! Toque em "Entregue" para ir à próxima';return}
+  while(stepIdx+1<l.steps.length-1){
+    const [lng,lat]=l.steps[stepIdx+1].maneuver.location;
+    if(hav(pos,{lat,lng})<30)stepIdx++;else break}
+  updateBanner(pos);
+  const coords=[];l.steps.forEach(s=>s.geometry&&coords.push(...s.geometry.coordinates));
+  if(coords.length&&distToLine(pos,coords)>70){if(++offCount>=3)reroute(pos)}else offCount=0;
+}
+async function reroute(pos){
+  if(rerouting)return;rerouting=true;offCount=0;
+  $('nSub').textContent='Recalculando rota...';speak('Recalculando');
+  try{
+    const rest=opt.slice(curStop).map(i=>groups[i]);
+    const url=`${OSRM}/route/v1/driving/${[pos,...rest].map(p=>p.lng+','+p.lat).join(';')}?steps=true&overview=full&geometries=geojson`;
+    const j=await(await fetch(url)).json();
+    if(j.code==="Ok"){j.routes[0].legs.forEach((lg,k)=>legs[curStop-1+k]=lg);stepIdx=0;enterLeg()}
+  }catch(e){}
+  rerouting=false;
+}
+</script>
+</body>
+</html>
