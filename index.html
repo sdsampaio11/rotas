@@ -81,6 +81,34 @@ const hav=(a,b)=>{const dl=rad(b.lat-a.lat),dn=rad(b.lng-a.lng);const h=Math.sin
 const cost=(o,M)=>o.slice(1).reduce((s,v,i)=>s+M[o[i]][v],0);
 function nn(D,s){const u=new Set(D.keys());u.delete(s);const o=[s];while(u.size){const c=o[o.length-1];let b=-1,bd=1e18;for(const j of u)if(D[c][j]<bd){bd=D[c][j];b=j}o.push(b);u.delete(b)}return o}
 function twoOpt(o,D){let imp=true;const n=o.length;while(imp){imp=false;for(let i=1;i<n-1;i++)for(let j=i+1;j<n;j++){const a=o[i-1],b=o[i],c=o[j],d=j<n-1?o[j+1]:null;const dl=D[a][c]+(d!==null?D[b][d]:0)-D[a][b]-(d!==null?D[c][d]:0);if(dl<-1e-6){o=o.slice(0,i).concat(o.slice(i,j+1).reverse(),o.slice(j+1));imp=true}}}return o}
+/* Otimizador: vizinho mais próximo + 2-opt + Or-opt, repetido com perturbações (ILS).
+   Usa tempos reais de ida e volta (respeita mão única) e o caminho termina onde for melhor. */
+function localSearch(o,D){
+  let best=cost(o,D),imp=true;const n=o.length;
+  while(imp){imp=false;
+    for(let i=1;i<n-1;i++)for(let j=i+1;j<n;j++){ // 2-opt
+      const t=o.slice(0,i).concat(o.slice(i,j+1).reverse(),o.slice(j+1)),c=cost(t,D);
+      if(c<best-1e-6){o=t;best=c;imp=true}}
+    for(let len=1;len<=3;len++)for(let i=1;i+len<=n;i++){ // Or-opt: move bloco de 1 a 3 paradas
+      const seg=o.slice(i,i+len),rest=o.slice(0,i).concat(o.slice(i+len));
+      for(let p=1;p<=rest.length;p++){if(p===i)continue;
+        const t=rest.slice(0,p).concat(seg,rest.slice(p)),c=cost(t,D);
+        if(c<best-1e-6){o=t;best=c;imp=true;break}
+        const r=rest.slice(0,p).concat(seg.slice().reverse(),rest.slice(p)),c2=cost(r,D);
+        if(c2<best-1e-6){o=r;best=c2;imp=true;break}}
+      if(imp)break}
+  }
+  return o}
+function optimize(D,s){
+  const n=D.length;if(n<4)return nn(D,s);
+  let best=localSearch(nn(D,s),D),bc=cost(best,D);
+  const iters=n>70?8:n>40?25:60;
+  for(let k=0;k<iters;k++){
+    const t=best.slice(1),m=t.length; // perturbação: troca de dois blocos (double-bridge)
+    const a=1+Math.floor(Math.random()*(m-2)),b=a+1+Math.floor(Math.random()*(m-a-1)),c=b+1+Math.floor(Math.random()*(m-b));
+    const cand=localSearch([best[0]].concat(t.slice(0,a),t.slice(b,c),t.slice(a,b),t.slice(c)),D),cc=cost(cand,D);
+    if(cc<bc-1e-6){best=cand;bc=cc}}
+  return best}
 const km=v=>(v/1000).toFixed(2).replace('.',',')+' km',min=v=>Math.round(v/60)+' min';
 const fmtD=m=>m>=1000?(m/1000).toFixed(1).replace('.',',')+' km':Math.max(10,Math.round(m/10)*10)+' m';
 
@@ -140,9 +168,9 @@ $('go').onclick=async()=>{
   let dur,dist;est=false;
   try{const j=await(await fetch(`${OSRM}/table/v1/driving/${loc}?annotations=duration,distance`)).json();if(j.code!=="Ok")throw 0;dur=j.durations;dist=j.distances}
   catch(e){est=true;dist=pts.map(a=>pts.map(b=>hav(a,b)*1.35));dur=dist.map(r=>r.map(d=>d/8.3))}
-  const S=dur.map((r,i)=>r.map((v,j)=>((v??0)+(dur[j][i]??0))/2));
+  const S=dur.map((r,i)=>r.map((v,j)=>v??(dur[j][i]??1e7)));
   const orig=[s,...[...Array(n).keys()].filter(i=>i!==s)];
-  const o=twoOpt(nn(S,s),S);
+  const o=optimize(S,s);
   groups=pts;opt=o;legs=[];done=new Set();curStop=1;
   let geo=null;
   if(!est){try{const j=await(await fetch(`${OSRM}/route/v1/driving/${o.map(i=>pts[i].lng+','+pts[i].lat).join(';')}?steps=true&overview=full&geometries=geojson`)).json();if(j.code==="Ok"){legs=j.routes[0].legs;geo=j.routes[0].geometry.coordinates}}catch(e){}}
